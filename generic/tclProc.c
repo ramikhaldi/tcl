@@ -134,6 +134,82 @@ static const Tcl_ObjType lambdaType = {
 /*
  *----------------------------------------------------------------------
  *
+ * Tcl_CallStratObjCmd --
+ *
+ *	This object-based function is invoked to process the "callstrat" Tcl
+ *	command. See the user documentation for details on what it does.
+ *
+ * Results:
+ *	A standard Tcl object result value.
+ *
+ * Side effects:
+ *	The call strategy of the target command will be set (default: Call by value).
+ *
+ *----------------------------------------------------------------------
+ */
+int
+Tcl_CallStratObjCmd(
+    TCL_UNUSED(ClientData),
+    Tcl_Interp *interp,		/* Current interpreter. */
+    int objc,			/* Number of arguments. */
+    Tcl_Obj *const objv[])	/* Argument objects. */
+{
+	Command *cmd;
+    const char *commandName;
+	int argumentIndex = 0;
+	char *callStrategies;
+	int numCallStrategies;
+	char *strat;
+
+    if (objc < 2) {
+		Tcl_WrongNumArgs(interp, 1, objv, "<command> ?<arg1 args2 ...>?");
+		return TCL_ERROR;
+    }
+
+	// Get target command
+    commandName = TclGetString(objv[1]);
+
+	// Get command pointer
+	cmd = (Command *) Tcl_FindCommand(interp, commandName, NULL, 0);
+	if(cmd == NULL) {
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown target command \"%s\"", commandName));
+        Tcl_SetErrorCode(interp, "TCL", "LOOKUP", "COMMAND", commandName, NULL);
+		return TCL_ERROR;
+	}
+	
+	// Get number of given strategies
+	numCallStrategies = objc - 2;
+
+	// Validate call strategies
+	for (argumentIndex = 0; argumentIndex < numCallStrategies; argumentIndex++) {
+		strat = objv[argumentIndex+2]->bytes;
+		if (strncmp(strat, "*", 1) && strncmp(strat, "&", 1)) {
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown call strategy \"%s\"", strat));
+        	Tcl_SetErrorCode(interp, "TCL", "UnknownCallStrategy", commandName, NULL);
+			return TCL_ERROR;
+		}
+	}
+
+	//TODO: dealloc previous one ? and where ?
+	//TODO: dealloc callstrat for deleted commands (other ways to delete commands ?)
+	// Alloc memory for strategies
+	callStrategies = (char *) Tcl_Alloc(sizeof(char) * numCallStrategies + 1);
+
+	// Store strategies
+	for (argumentIndex = 0; argumentIndex < numCallStrategies; argumentIndex++) {
+		strat = objv[argumentIndex+2]->bytes;
+		callStrategies[argumentIndex] = strat[0];
+	}
+	callStrategies[argumentIndex] = '\0';
+	cmd->callStrategies = callStrategies;
+
+	return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Tcl_ProcObjCmd --
  *
  *	This object-based function is invoked to process the "proc" Tcl
@@ -1494,6 +1570,7 @@ TclPushProcCallFrame(
     int result;
     ByteCode *codePtr;
 
+
     /*
      * If necessary (i.e. if we haven't got a suitable compilation already
      * cached) compile the procedure's body. The compiler will allocate frame
@@ -1607,6 +1684,129 @@ TclNRInterpProc(
 /*
  *----------------------------------------------------------------------
  *
+ * passArgumentByName --
+ *
+ * 
+ *
+ * Results:
+ *	A standard Tcl object result value.
+ *
+ * Side effects:
+ *  Create link between given argument which should be passed by name
+ *  and the local variables
+ *
+ *----------------------------------------------------------------------
+ */
+int passArgumentByName (Tcl_Interp *interp, Tcl_Obj* givenArgument, CompiledLocal *localVarPtr) {
+	//TODO free used memory
+	Tcl_Obj**tmp = (Tcl_Obj**) Tcl_Alloc(sizeof(Tcl_Obj*) * 3);
+	Tcl_Obj* localArgumentObj = Tcl_NewStringObj(localVarPtr->name, -1);
+
+	// Unset initialized local variable
+	tmp[1] = Tcl_NewStringObj("-nocomplain", -1);
+	tmp[2] = localArgumentObj;
+	if(Tcl_UnsetObjCmd(NULL, interp, 3, tmp)) {
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("cannot free the initialized argument \"%s\"", localArgumentObj->bytes));
+		Tcl_SetErrorCode(interp, "TCL", "UNSET", "PASS_BY_NAME", NULL);
+		return TCL_ERROR;
+	}
+
+	// Make link between given argument and local variable
+	tmp[1] = givenArgument;
+	tmp[2] = localArgumentObj;
+	if (Tcl_UpvarObjCmd(NULL, interp, 3, tmp) ) {
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("cannot link given argument \"%s\" with local argument \"%s\"", givenArgument->bytes, localArgumentObj->bytes));
+		Tcl_SetErrorCode(interp, "TCL", "UPVAR", "LINK_ARGUMENT_LOCAL", NULL);
+		return TCL_ERROR;
+	}
+
+	return TCL_OK;
+}
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * handleCallStrategies --
+ *
+ * 
+ *
+ * Results:
+ *	A standard Tcl object result value.
+ *
+ * Side effects:
+ *	Depends on the call strategies defined by callstrat command
+ *  Create link between given arguments which should be passed by name
+ *  and the local variables
+ *
+ *----------------------------------------------------------------------
+ */
+int handleCallStrategies (Tcl_Interp *interp) {
+	Interp *iPtr = (Interp *) interp;
+	Proc *procPtr;
+	Command *cmd;
+	int numCallStrategies;
+	int callStrategyIndex;
+	CompiledLocal *localVarPtr;
+	int effectiveArgumentIndex;	
+	Tcl_Obj *givenArgument;
+
+	// Check preconditions
+	if (iPtr == NULL || iPtr->varFramePtr == NULL || iPtr->varFramePtr->procPtr == NULL || iPtr->framePtr == NULL || iPtr->framePtr->objv == NULL) {
+		Tcl_Panic("Handle call strategies: Interpreter, variable frame, procedure pointer, frame pointer, or command array may not be NULL!");
+	}
+
+	// Get the procedure pointer
+	procPtr = iPtr->varFramePtr->procPtr;
+
+	// Get the first argument pointer (we have linked list of given arguments)
+	localVarPtr = procPtr->firstLocalPtr;
+
+	// Get command pointer to read the defined call strategies
+	cmd = (Command *) Tcl_FindCommand(interp, iPtr->framePtr->objv[0]->bytes, NULL, 0);
+
+	// Go ahead if we have got a valid command pointer and defined call strategies 
+    if (cmd != NULL && cmd->callStrategies != NULL) {
+
+		// Get the number of strategies (each strategy is represented as single character)
+		// cmd->callStrategies is null terminated string
+    	numCallStrategies = strlen(cmd->callStrategies);
+
+		// Iterate over strategies. Process only the given arguments in runtime (As the number of arguments can be variable)
+    	for (callStrategyIndex = 0; callStrategyIndex < numCallStrategies && callStrategyIndex <  procPtr->numCompiledLocals && localVarPtr != NULL ; callStrategyIndex++) {
+
+			// Compute the effective argument index (necessary to identify the argument index for commands, lambda procedures, and methods).
+    		effectiveArgumentIndex = iPtr->framePtr->objc - procPtr->numCompiledLocals + callStrategyIndex;
+
+			if (effectiveArgumentIndex < 0) {
+				Tcl_Panic("Handle call strategies: The effective argument index may not be negative!");
+			}
+
+			// Check if the current argument should be passed by name (whether a call by name strategy is configured)
+			if (cmd->callStrategies[callStrategyIndex] == '&') {
+				givenArgument = iPtr->framePtr->objv[effectiveArgumentIndex];
+				if (passArgumentByName(interp, givenArgument, localVarPtr)) {
+					//TODO: format warning! Verify the result below: test result string ?
+					Tcl_SetObjResult(interp, Tcl_ObjPrintf("cannot pass the argument \"%s\" by name", localVarPtr->name));
+					Tcl_SetErrorCode(interp, "TCL", "CALLSTRAT", "PASS_BY_NAME", NULL);
+					return TCL_ERROR;
+				}
+            }
+
+			// Go to the next compiled argument 
+			localVarPtr = localVarPtr->nextPtr;
+
+        }
+
+    }
+
+	return TCL_OK;
+}
+
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * TclNRInterpProcCore --
  *
  *	When a Tcl procedure, lambda term or anything else that works like a
@@ -1637,6 +1837,7 @@ TclNRInterpProcCore(
     int result;
     CallFrame *freePtr;
     ByteCode *codePtr;
+
 
     result = InitArgsAndLocals(interp, skip);
     if (result != TCL_OK) {
@@ -1716,6 +1917,14 @@ TclNRInterpProcCore(
 
     TclNRAddCallback(interp, InterpProcNR2, procNameObj, errorProc,
 	    NULL, NULL);
+
+
+	//TOOD: check return value. What to do in case of error ?
+	result = handleCallStrategies(interp);
+	if (result != TCL_OK) {
+		printf("error with handleCallStrategies: %s\n", Tcl_GetObjResult(interp)->bytes);
+	}
+
     return TclNRExecuteByteCode(interp, codePtr);
 }
 
@@ -2619,6 +2828,8 @@ TclNRApplyObjCmd(
     memset(&extraPtr->cmd, 0, sizeof(Command));
     procPtr->cmdPtr = &extraPtr->cmd;
     extraPtr->cmd.nsPtr = (Namespace *) nsPtr;
+
+	extraPtr->cmd.callStrategies = NULL;
 
     /*
      * TIP#280 (semi-)HACK!

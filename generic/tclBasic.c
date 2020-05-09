@@ -307,6 +307,7 @@ static const CmdInfo builtInCmds[] = {
     {"lsort",		Tcl_LsortObjCmd,	NULL,			NULL,	CMD_IS_SAFE},
     {"package",		Tcl_PackageObjCmd,	NULL,			TclNRPackageObjCmd,	CMD_IS_SAFE},
     {"proc",		Tcl_ProcObjCmd,		NULL,			NULL,	CMD_IS_SAFE},
+    {"callstrat",	Tcl_CallStratObjCmd,		NULL,			NULL,	CMD_IS_SAFE},
     {"regexp",		Tcl_RegexpObjCmd,	TclCompileRegexpCmd,	NULL,	CMD_IS_SAFE},
     {"regsub",		Tcl_RegsubObjCmd,	TclCompileRegsubCmd,	NULL,	CMD_IS_SAFE},
     {"rename",		Tcl_RenameObjCmd,	NULL,			NULL,	CMD_IS_SAFE},
@@ -944,6 +945,7 @@ Tcl_CreateInterp(void)
 	    cmdPtr->importRefPtr = NULL;
 	    cmdPtr->tracePtr = NULL;
 	    cmdPtr->nreProc = cmdInfoPtr->nreProc;
+        cmdPtr->callStrategies = NULL;
 	    Tcl_SetHashValue(hPtr, cmdPtr);
 	}
     }
@@ -2474,6 +2476,7 @@ Tcl_CreateCommand(
     cmdPtr->importRefPtr = NULL;
     cmdPtr->tracePtr = NULL;
     cmdPtr->nreProc = NULL;
+    cmdPtr->callStrategies = NULL;
 
     /*
      * Plug in any existing import references found above. Be sure to update
@@ -2701,6 +2704,7 @@ TclCreateObjCommandInNs(
     cmdPtr->importRefPtr = NULL;
     cmdPtr->tracePtr = NULL;
     cmdPtr->nreProc = NULL;
+    cmdPtr->callStrategies = NULL;
 
     /*
      * Plug in any existing import references found above. Be sure to update
@@ -3365,6 +3369,7 @@ Tcl_DeleteCommand(
  *----------------------------------------------------------------------
  */
 
+//TODO: free callStrategies and other things. in all delete command function (from token and from other ?)
 int
 Tcl_DeleteCommandFromToken(
     Tcl_Interp *interp,		/* Token for command interpreter returned by a
@@ -4368,6 +4373,7 @@ Dispatch(
 #endif /* USE_DTRACE */
 
     iPtr->cmdCount++;
+
     return objProc(clientData, interp, objc, objv);
 }
 

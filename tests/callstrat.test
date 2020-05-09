@@ -1,0 +1,626 @@
+# This file contains tests for the callstrat.c source file. Tests appear in the
+# same order as the C code that they test.
+#
+# Sourcing this file into Tcl runs the tests and generates output for errors.
+# No output means no errors were found.
+#
+# Author: Rami Khaldi <rami.khaldi@fau.de>
+# License: BSD
+
+if {"::tcltest" ni [namespace children]} {
+    package require tcltest 2
+    namespace import -force ::tcltest::*
+}
+
+#Default behavior: Arguments are passed by value
+#The variable side effects are only visible within the procedure
+
+
+test failure-callstrat-wrong-usage {Tcl_CallStratObjCmd, wrong procedure usage} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat
+
+} -returnCodes error -result {wrong # args: should be "callstrat <command> ?<arg1 args2 ...>?"}
+
+test failure-callstrat-target-not-found {Tcl_CallStratObjCmd, target command not found} -setup {catch {rename target_command ""}} -body {
+    
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat target_command
+
+} -returnCodes error -result {unknown target command "target_command"}
+
+test failure-callstrat-wrong-argument-definition-1 {Tcl_CallStratObjCmd, wrong argument definition} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat myProc * + *
+
+} -returnCodes error -result {unknown call strategy "+"}
+
+
+test success-defaut-behavior {Default behavior without callstrat: Call by value} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Call the target procedure
+    myProc $a $b $c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {1-2-3}
+
+test success-callstrat-defaut-behavior {Tcl_CallStratObjCmd, default behavior using callstrat: Call by value} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy (default behavior, No need to call the following command)
+    callstrat myProc * * *
+
+    #Call the target procedure
+    myProc $a $b $c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {1-2-3}
+
+
+test success-callstrat-call-by-names {Tcl_CallStratObjCmd, call by names} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat myProc & & &
+
+    #Call the target procedure
+    myProc a b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-3-4}
+
+test success-callstrat-call-by-names-different-names-for-args-variables {Tcl_CallStratObjCmd, call by names referenced variable names != args names} -setup {catch {rename myProc ""}} -body {
+
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set x 1
+    set y 2
+    set z 3
+
+    #Specify call strategy
+    callstrat myProc & & &
+
+    #Call the target procedure
+    myProc x y z
+
+    #Return variable states
+    return "$x-$y-$z"
+
+} -result {2-3-4}
+
+
+
+test success-callstrat-call-by-names-fewer-argument-specified {Tcl_CallStratObjCmd, fewer strategies than the procedure argument number} -setup {catch {rename myProc ""}} -body {
+    
+    proc myProc {a b c} { incr a; incr b; incr c}
+    
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat myProc &
+
+    #Call the target procedure
+    myProc a $b $c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-2-3}
+
+test success-callstrat-call-by-names-more-argument-specified {Tcl_CallStratObjCmd, more strategies than the procedure argument number} -setup {catch {rename myProc ""}} -body {
+    
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat myProc & & & & & & & & 
+
+    #Call the target procedure
+    myProc a b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-3-4}
+
+
+test success-callstrat-call-mixture {Tcl_CallStratObjCmd, call by names/values} -setup {catch {rename myProc ""}} -body {
+    
+    proc myProc {a b c} { incr a; incr b; incr c}
+
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat myProc & * &
+
+    #Call the target procedure
+    myProc a $b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-2-4}
+
+test success-callstrat-call-mixture-apply {Tcl_CallStratObjCmd, anonymous call by names/values} -body {
+    set a 1
+    set b 2
+    set c 3
+
+    #Specify call strategy
+    callstrat apply & * &
+
+    #Call the target anonymous procedure (lambda)
+    apply {{x y z} {incr x; incr y; incr z}} a $b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-2-4}
+
+test success-callstrat-call-mixture-recursive-calls {Tcl_CallStratObjCmd, recursive calls by name/value} -setup {catch {rename myRecProc ""}} -body {
+    
+    set a 1
+    set b 2
+    set c 3
+
+    proc myRecProc {a b c} {
+        if {$a + $b + $c > 10} {
+            return
+        }
+
+        incr a; incr b; incr c;
+
+        #Pass by name: a and c. Pass by value: b
+        myRecProc a $b c
+    }
+
+    #Specify call strategy
+    callstrat myRecProc & * &
+
+    #Call the target procedure
+    myRecProc a $b c
+    #Iter1: 1 2 3
+    #Iter2: 2 2 4
+    #Iter3: 3 2 5
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {3-2-5}
+
+test success-callstrat-call-mixture-recursive-calls-tailcall {Tcl_CallStratObjCmd, recurisve tailcall by names/values} -setup {catch {rename myRecProc ""}} -body {
+    set a 1
+    set b 2
+    set c 3
+
+    proc myRecProc {a b c} {
+        if {$a + $b + $c > 10} {
+            return
+        }
+
+        incr a; incr b; incr c;
+
+        #Pass by names: a & c. Pass by value: b
+        tailcall myRecProc a $b c
+    }
+
+    #Specify call strategy
+    callstrat myRecProc & * &
+
+    #Call the target procedure
+    myRecProc a $b c
+    #Iter1: 1 2 3
+    #Iter2: 2 2 4
+    #Iter3: 3 2 5
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {3-2-5}
+
+
+test success-callstrat-call-by-names-array {Tcl_CallStratObjCmd, array passed by name} -setup {catch {rename extendArray ""}; unset -nocomplain myArray} -body {
+    set myArray(a) 1
+    set myArray(b) 2
+    set myArray(c) 3
+
+    #proc extending array
+    proc extendArray {inputArray} {set inputArray(d) 4}
+
+    #Specify call strategy
+    callstrat extendArray &
+
+    #Call the target procedure
+    extendArray myArray
+
+    #Return array state
+    return [array get myArray]
+
+} -result {d 4 a 1 b 2 c 3}
+
+test success-callstrat-call-by-names-dict {Tcl_CallStratObjCmd, dict passed by name} -setup {catch {rename extendDict ""}; unset -nocomplain myDict}  -body {
+    dict set myDict a 1
+    dict set myDict b 2
+    dict set myDict c 3
+
+    #proc extending dict
+    proc extendDict {inputDict} {dict set inputDict d 4}
+
+    #Specify call strategy
+    callstrat extendDict &
+
+    #Call the target procedure
+    extendDict myDict
+
+    #Return dict state
+    return $myDict
+
+} -result {a 1 b 2 c 3 d 4}
+
+test success-callstrat-call-by-names-various-types {Tcl_CallStratObjCmd, various variables passed by name} -setup {catch {rename manipulateData ""}}  -body {
+
+    set x 1
+    set y [list 2 3]
+    set c [dict create 4 5]
+    set d " myString "
+
+    #proc manipulating variables
+    proc manipulateData {a b c d} {append a _; append b _; append c _; append d _}
+
+    #Specify call strategy
+    callstrat manipulateData & & & &
+
+    #Call the target procedure
+    manipulateData x y c d
+
+    #Return dict state
+    return "${x}${y}${c}${d}"
+
+} -result {1_2 3_4 5_ myString _}
+
+test success-callstrat-call-by-names-various-types-full-qualified-command-name {Tcl_CallStratObjCmd, various variables passed by name, full qualified command name} -setup {catch {rename manipulateData ""}}  -body {
+
+    set x 1
+    set y [list 2 3]
+    set c [dict create 4 5]
+    set d " myString "
+    namespace eval ::X {}
+    #proc manipulating variables
+    proc ::X::manipulateData {a b c d} {append a _; append b _; append c _; append d _}
+
+    #Specify call strategy
+    callstrat ::X::manipulateData & & & &
+
+    #Call the target procedure
+    ::X::manipulateData x y c d
+
+    #Return dict state
+    return "${x}${y}${c}${d}"
+
+} -result {1_2 3_4 5_ myString _}
+
+
+test success-callstrat-different-strategies-nested-namespaces-using-variable {Tcl_CallStratObjCmd, various variables defined in different nested namespaces passed by name/value using variable command} -setup {catch {rename manipulateData ""}}  -body {
+
+    namespace eval ::ROOTNS {
+        namespace eval AAA {variable a 1}
+        namespace eval BBB {variable b [list 2 3]}
+        namespace eval CCC {variable c [dict create 4 5]}
+        namespace eval DDD {variable d " myString "}
+        namespace eval EEE {variable e 100}
+    }
+
+    #proc manipulating variables
+    proc manipulateData {a b c d e} {append a _; append b _; append c _; append d _; append e _}
+
+    #Specify call strategy
+    callstrat manipulateData & & & & *
+
+    #Call the target procedure
+    manipulateData ::ROOTNS::AAA::a ::ROOTNS::BBB::b ::ROOTNS::CCC::c ::ROOTNS::DDD::d ::ROOTNS::EEE::e
+
+    #Return dict state
+    return "${::ROOTNS::AAA::a}${::ROOTNS::BBB::b}${::ROOTNS::CCC::c}${::ROOTNS::DDD::d}${::ROOTNS::EEE::e}"
+
+} -result {1_2 3_4 5_ myString _100}
+
+test success-callstrat-call-by-names-nested-namespaces {Tcl_CallStratObjCmd, various variables defined in different nested namespaces passed by name} -setup {catch {rename manipulateData ""}}  -body {
+
+    namespace eval ::ROOTNS {
+        namespace eval AAA {set a 1}
+        namespace eval BBB {set b [list 2 3]}
+        namespace eval CCC {set c [dict create 4 5]}
+        namespace eval DDD {set d " myString "}
+        namespace eval EEE {set e 100}
+    }
+
+    #proc manipulating variables
+    proc manipulateData {a b c d e} {append a _; append b _; append c _; append d _; append e _}
+
+    #Specify call strategy
+    callstrat manipulateData & & & & *
+
+    #Call the target procedure
+    manipulateData ::ROOTNS::AAA::a ::ROOTNS::BBB::b ::ROOTNS::CCC::c ::ROOTNS::DDD::d ::ROOTNS::EEE::e
+
+    #Return dict state
+    return "${::ROOTNS::AAA::a}${::ROOTNS::BBB::b}${::ROOTNS::CCC::c}${::ROOTNS::DDD::d}${::ROOTNS::EEE::e}"
+
+} -result {1_2 3_4 5_ myString _100}
+
+test success-callstrat-call-by-names-multiple-levels {Tcl_CallStratObjCmd, variables passed by name over multiple levels} -setup {catch {rename manipulateData1 ""}; catch {rename manipulateData2 ""}; catch {rename manipulateData3 ""}}  -body {
+
+    set a 1
+    set b 2
+    set c 3
+    set d 4
+
+    #procs manipulating variables
+    proc manipulateData1 {a b c d} {
+        append a +; append b +; append c +; append d +;
+        manipulateData2 a b c d
+    }
+    proc manipulateData2 {a b c d} {
+        append a -; append b -; append c -; append d -;
+        manipulateData3 a b c d
+    }
+    proc manipulateData3 {a b c d} {
+        append a .; append b .; append c .; append d .;
+    }
+
+    #Specify call strategy
+    callstrat manipulateData1 & & & &
+    callstrat manipulateData2 & & & &
+    callstrat manipulateData3 & & & &
+
+    #Call the target procedure
+    manipulateData1 a b c d
+
+    #Return dict state
+    return "${a}${b}${c}${d}"
+
+} -result {1+-.2+-.3+-.4+-.}
+
+test success-callstrat-various-strategies-multiple-levels {Tcl_CallStratObjCmd, variables passed by name/value over multiple levels} -setup {catch {rename manipulateData1 ""}; catch {rename manipulateData2 ""}; catch {rename manipulateData3 ""}}  -body {
+
+    set a 1
+    set b 2
+    set c 3
+    set d 4
+
+    #procs manipulating variables
+    proc manipulateData1 {a b c d} {
+        append a +; append b +; append c +; append d +;
+        manipulateData2 a b c d
+    }
+    proc manipulateData2 {a b c d} {
+        append a -; append b -; append c -; append d -;
+        manipulateData3 a b c d
+    }
+    proc manipulateData3 {a b c d} {
+        append a .; append b .; append c .; append d .;
+    }
+
+    #Specify call strategy
+    callstrat manipulateData1 & * & &
+    callstrat manipulateData2 & & * &
+    callstrat manipulateData3 & & & *
+
+    #Call the target procedure
+    manipulateData1 a b c d
+
+    #Return dict state
+    return "${a}${b}${c}${d}"
+
+} -result {1+-.23+4+-}
+
+test success-callstrat-call-by-names-safe-interpreter-1 {Tcl_CallStratObjCmd, call by names using safe interpreter -safe} -setup {catch {rename manipulateData1 ""}; catch {rename manipulateData2 ""}; catch {rename manipulateData3 ""}} -body {
+    
+    set safeInterpreter [interp create -safe]
+        $safeInterpreter eval {
+          
+          
+        set a 1
+        set b 2
+        set c 3
+        set d 4
+    
+        #procs manipulating variables
+        proc manipulateData1 {a b c d} {
+            append a +; append b +; append c +; append d +;
+            manipulateData2 a b c d
+        }
+        proc manipulateData2 {a b c d} {
+            append a -; append b -; append c -; append d -;
+            manipulateData3 a b c d
+        }
+        proc manipulateData3 {a b c d} {
+            append a .; append b .; append c .; append d .;
+        }
+    
+        #Specify call strategy
+        callstrat manipulateData1 & & & &
+        callstrat manipulateData2 & & & &
+        callstrat manipulateData3 & & & &
+    
+        #Call the target procedure
+        manipulateData1 a b c d
+    
+        #Return dict state
+        return "${a}${b}${c}${d}"
+    }
+
+} -result {1+-.2+-.3+-.4+-.}
+
+test success-callstrat-call-by-names-safe-interpreter-2 {Tcl_CallStratObjCmd, call by names using safe interpreter ::safe} -setup {catch {rename manipulateData1 ""}; catch {rename manipulateData2 ""}; catch {rename manipulateData3 ""}} -body {
+    
+    set safeInterpreter [::safe::interpCreate]
+        $safeInterpreter eval {
+          
+        set a 1
+        set b 2
+        set c 3
+        set d 4
+    
+        #procs manipulating variables
+        proc manipulateData1 {a b c d} {
+            append a +; append b +; append c +; append d +;
+            manipulateData2 a b c d
+        }
+        proc manipulateData2 {a b c d} {
+            append a -; append b -; append c -; append d -;
+            manipulateData3 a b c d
+        }
+        proc manipulateData3 {a b c d} {
+            append a .; append b .; append c .; append d .;
+        }
+    
+        #Specify call strategy
+        callstrat manipulateData1 & & & &
+        callstrat manipulateData2 & & & &
+        callstrat manipulateData3 & & & &
+    
+        #Call the target procedure
+        manipulateData1 a b c d
+    
+        #Return dict state
+        return "${a}${b}${c}${d}"
+    }
+
+} -result {1+-.2+-.3+-.4+-.}
+
+test success-callstrat-call-by-names-methods {Tcl_CallStratObjCmd, method passed by name}  -setup {catch {myClass destroy}} -body {
+    set a 1
+    set b 2
+    set c 3
+
+    #create class
+    oo::class create myClass
+
+    #define method
+    oo::define myClass { method myMethod {a b c} { incr a; incr b; incr c }}
+
+    #create object
+    set obj [myClass new]
+
+    #Specify call strategy
+    callstrat $obj & * &
+
+    #Call the target method
+    $obj myMethod a $b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-2-4}
+
+test success-callstrat-call-by-names-methods-inheritence {Tcl_CallStratObjCmd, method passed by name (inheritence scenario)} -setup {catch {myBaseClass destroy}; catch {myClass destroy}} -body {
+    set a 1
+    set b 2
+    set c 3
+
+    #create class
+    oo::class create myBaseClass
+
+    #define method
+    oo::define myBaseClass { method myMethod {a b c} { incr a; incr b; incr c }}
+
+    oo::class create myClass {superclass myBaseClass}
+
+    #create object
+    set obj [myClass new]
+
+    #Specify call strategy
+    callstrat $obj & * &
+
+    #Call the target method
+    $obj myMethod a $b c
+
+    #Return variable states
+    return "$a-$b-$c"
+
+} -result {2-2-4}
+
+
+test success-callstrat-tip-example-procedure {Tcl_CallStratObjCmd, TIP#572 example will be tested} -setup {catch {rename manipulateData ""}}  -body {
+
+    set a 1; set b [list 2 3]; set c [dict create 4 5]; set d "example"; set e 40; set f(X) 100; set f(Y) 200;
+
+    #proc manipulating variables
+    proc manipulateData {a b c d e fw} {incr a; set b [join $b -]; set c WasDict; set d [string toupper $d]; incr e -19; set fw(Z) 300}
+
+    #Specify call strategy
+    callstrat manipulateData & & & & * &
+
+    #Call the target procedure
+    manipulateData a b c d $e f
+
+    # puts "a: $a" # 1
+    # puts "b: $b" # 2-3
+    # puts "c: $c" # WasDict
+    # puts "d: $d" # EXAMPLE
+    # puts "e: $e" # 40 
+    # puts "f: [array get f]" # Array: X -> 100, Y -> 200, Z -> 300
+   
+    return "$a $b $c $d $e ([array get f])"
+
+} -result {2 2-3 WasDict EXAMPLE 40 (X 100 Y 200 Z 300)}
+
+#TODO: setup should free any previous used data. and unset all variables and other things!
+#TODO: argument and args (minimum of #args == 0 and > 0)
+#TODO: what about optional parameters
+#TODO: callstrat <target> -> remove strategy ? garbage collection ? memeory check ? leaks ?
+# TODO: optional arguments at all, and part of arguments
+# TODO: SHow/delete all warning  (make Werror to test that)
+
+# Local Variables:
+# mode: tcl
+# fill-column: 78
+# End:

@@ -1752,7 +1752,9 @@ EXTERN char *		Tcl_UniCharToUtfDString(const int *uniStr,
 /* 648 */
 EXTERN int *		Tcl_UtfToUniCharDString(const char *src,
 				size_t length, Tcl_DString *dsPtr);
-
+/* 649 */
+EXTERN int		Tcl_CallStratObjCmd(void *clientData, Tcl_Interp *interp,
+				int objc, Tcl_Obj *const objv[]);
 typedef struct {
     const struct TclPlatStubs *tclPlatStubs;
     const struct TclIntStubs *tclIntStubs;
@@ -2436,6 +2438,7 @@ typedef struct TclStubs {
     int (*tcl_UtfToUniChar) (const char *src, int *chPtr); /* 646 */
     char * (*tcl_UniCharToUtfDString) (const int *uniStr, size_t uniLength, Tcl_DString *dsPtr); /* 647 */
     int * (*tcl_UtfToUniCharDString) (const char *src, size_t length, Tcl_DString *dsPtr); /* 648 */
+    int (*Tcl_CallStratObjCmd) (void *clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]); /* 649 */
 } TclStubs;
 
 extern const TclStubs *tclStubsPtr;
@@ -3702,7 +3705,8 @@ extern const TclStubs *tclStubsPtr;
 	(tclStubsPtr->tcl_UniCharToUtfDString) /* 647 */
 #define Tcl_UtfToUniCharDString \
 	(tclStubsPtr->tcl_UtfToUniCharDString) /* 648 */
-
+#define Tcl_CallStratObjCmd \
+	(tclStubsPtr->Tcl_CallStratObjCmd) /* 649 */
 #endif /* defined(USE_TCL_STUBS) */
 
 /* !END!: Do not edit above this line. */

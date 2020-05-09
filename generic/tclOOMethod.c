@@ -851,6 +851,8 @@ PushMethodCallFrame(
     fdPtr->cmd.nsPtr = nsPtr;
     fdPtr->cmd.clientData = &fdPtr->efi;
     pmPtr->procPtr->cmdPtr = &fdPtr->cmd;
+    
+    fdPtr->cmd.callStrategies = NULL;
 
     /*
      * [Bug 2037727] Always call TclProcCompileProc so that we check not only
