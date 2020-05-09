@@ -1752,7 +1752,7 @@ int handleCallStrategies (Tcl_Interp *interp) {
 
 	// Check preconditions
 	if (iPtr == NULL || iPtr->varFramePtr == NULL || iPtr->varFramePtr->procPtr == NULL || iPtr->framePtr == NULL || iPtr->framePtr->objv == NULL) {
-		Tcl_Panic("Handle call strategies: Interpreter, variable frame, procedure pointer, frame pointer, or command array may not be NULL!");
+		return TCL_OK;
 	}
 
 	// Get the procedure pointer
